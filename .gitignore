@@ -1,0 +1,4 @@
+out/
+android/app/assets/game.html
+*.keystore
+hs_err_pid*.log
