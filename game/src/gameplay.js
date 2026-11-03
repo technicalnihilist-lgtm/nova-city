@@ -214,13 +214,6 @@
     el.classList.add('pop');
   }
 
-  function popEl(el) {
-    if (!el) return;
-    el.classList.remove('pop');
-    void el.offsetWidth;
-    el.classList.add('pop');
-  }
-
   let toastT = 0;
   function showToast(msg) {
     toast.textContent = msg;
@@ -738,7 +731,6 @@
         if (fill) fill.style.width = (state.score / CORE_TOTAL * 100) + '%';
         showToast('Energy core ' + state.score + ' / ' + CORE_TOTAL);
         popEl(document.getElementById('coreBox'));
-        popEl(document.getElementById('coreBox'));
         if (state.score === CORE_TOTAL) {
           document.getElementById('win').classList.add('on');
           document.getElementById('win').classList.remove('hide');
@@ -880,6 +872,10 @@
   let last = performance.now();
   let mapTick = 0;
   let lastGear = '1';
+  // HUD write caches: re-writing identical text/style every frame forces a
+  // style recalc 60 times a second for no visual change
+  let hudSpeed = -1, hudSpeedBar = -1, hudRpmBar = -1, hudFuelBar = -1;
+  let hudFuelLow = null, hudPrompt = null;
 
   function loop(now) {
     requestAnimationFrame(loop);
@@ -922,23 +918,30 @@
     // ---- HUD
     const driving = state.mode === 'drive' && state.car;
     const kmh = driving ? Math.abs(state.car.speed) * 3.6 : Math.hypot(state.vel.x, state.vel.z) * 3.6;
-    speedTxt.textContent = Math.round(kmh);
-    speedBar.style.width = Math.min(100, (kmh / 220) * 100) + '%';
+    const kmhTxt = Math.round(kmh);
+    if (kmhTxt !== hudSpeed) { hudSpeed = kmhTxt; speedTxt.textContent = kmhTxt; }
+    const kmhBar = Math.min(100, Math.round((kmh / 220) * 100));
+    if (kmhBar !== hudSpeedBar) { hudSpeedBar = kmhBar; speedBar.style.width = kmhBar + '%'; }
 
     if (driving) {
       const c = state.car;
       const gTxt = c.speed < -0.5 ? 'R' : (Math.abs(c.speed) < 0.4 && input.gas < 0.05 ? 'N' : String(c.gear + 1));
       if (gTxt !== lastGear) { lastGear = gTxt; gearTxt.textContent = gTxt; popEl(gearTxt); }
-      else gearTxt.textContent = gTxt;
-      rpmBar.style.width = Math.min(100, (c.rpm / 7200) * 100) + '%';
-      fuelBar.style.width = Math.min(100, c.fuel) + '%';
-      fuelBar.style.background = c.fuel < 12 ? '#ff6b5a' : 'linear-gradient(90deg,#7dffb2,#6fe3ff)';
+      const rpmW = Math.min(100, Math.round((c.rpm / 7200) * 100));
+      if (rpmW !== hudRpmBar) { hudRpmBar = rpmW; rpmBar.style.width = rpmW + '%'; }
+      const fuelW = Math.min(100, Math.round(c.fuel));
+      if (fuelW !== hudFuelBar) { hudFuelBar = fuelW; fuelBar.style.width = fuelW + '%'; }
+      const low = c.fuel < 12;
+      if (low !== hudFuelLow) {
+        hudFuelLow = low;
+        fuelBar.style.background = low ? '#ff6b5a' : 'linear-gradient(90deg,#7dffb2,#6fe3ff)';
+      }
     }
 
-    if (state.mode === 'foot') {
-      prompt.classList.toggle('on', !!nearestCar());
-    } else {
-      prompt.classList.remove('on');
+    const showPrompt = state.mode === 'foot' && !!nearestCar();
+    if (showPrompt !== hudPrompt) {
+      hudPrompt = showPrompt;
+      prompt.classList.toggle('on', showPrompt);
     }
 
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) toast.classList.remove('on'); }
