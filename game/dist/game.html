@@ -1707,7 +1707,14 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
   // ---------------------------------------------------------- traffic
   const traffic = [];
   const NODES = [];
-  function nodePos(i, k) { return { x: (i + 0.5) * CELL, z: (k + 0.5) * CELL }; }
+  // single reusable result object: nodePos used to allocate twice per AI car per
+  // frame (and again for every signal lamp), which was pure garbage
+  const nodeTmp = { x: 0, z: 0 };
+  function nodePos(i, k) {
+    nodeTmp.x = (i + 0.5) * CELL;
+    nodeTmp.z = (k + 0.5) * CELL;
+    return nodeTmp;
+  }
 
   for (let i = -GRID - 1; i <= GRID; i++) {
     for (let k = -GRID - 1; k <= GRID; k++) NODES.push({ i: i, k: k });
@@ -1756,12 +1763,13 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     scene.add(signalMesh);
   })();
   let lastSignalState = null;
+  const signalCol = new THREE.Color();
 
   function updateTraffic(dt) {
     const green = nsGreen();
     if (green !== lastSignalState) {
       lastSignalState = green;
-      const col = new THREE.Color();
+      const col = signalCol;
       for (let n = 0; n < NODES.length * 2; n++) {
         // even index = NS lamp, odd = EW lamp
         const isNS = (n % 2) === 0;
@@ -1777,7 +1785,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       const rx = t.dir[1], rz = -t.dir[0];           // right-hand lane offset
       const gx = p.x + rx * 4.2, gz = p.z + rz * 4.2;
       const dx = gx - t.x, dz = gz - t.z;
-      const dist = Math.hypot(dx, dz);
+      const dist = Math.sqrt(dx * dx + dz * dz);
 
       t.heading = angLerp(t.heading, Math.atan2(dx, dz), 1 - Math.exp(-3.5 * dt));
 
@@ -1785,14 +1793,15 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       if (dist < 16) target = 4.2;
       if (dist < 20 && aiMustStop(t.dir)) target = 0;
       if (player) {
-        const pd = Math.hypot(player.x - t.x, player.z - t.z);
-        if (pd < 8) target = 0;
+        const pdx = player.x - t.x, pdz = player.z - t.z;
+        if (pdx * pdx + pdz * pdz < 64) target = 0;
       }
       // simple separation from other AI cars ahead
-      for (const o of traffic) {
+      for (let n2 = 0; n2 < traffic.length; n2++) {
+        const o = traffic[n2];
         if (o === t) continue;
-        const od = Math.hypot(o.x - t.x, o.z - t.z);
-        if (od < 6.5) { target = Math.min(target, 1.5); break; }
+        const ox = o.x - t.x, oz = o.z - t.z;
+        if (ox * ox + oz * oz < 42.25) { target = Math.min(target, 1.5); break; }
       }
       t.speed = lerp(t.speed, target, 1 - Math.exp(-2.6 * dt));
 
@@ -1808,7 +1817,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         if (ni < -GRID - 1 || ni > GRID || nk < -GRID - 1 || nk > GRID) {
           t.dir = [-t.dir[0], -t.dir[1]];
         } else {
-          t.node = { i: ni, k: nk };
+          t.node.i = ni; t.node.k = nk;
           if (Math.random() < 0.34) {
             const left = [t.dir[1], -t.dir[0]], right = [-t.dir[1], t.dir[0]];
             t.dir = Math.random() < 0.5 ? left : right;
@@ -1817,8 +1826,10 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       }
       // player pushes traffic, never overlaps
       if (player) {
-        const pd = Math.hypot(player.x - t.x, player.z - t.z);
-        if (pd < 3.2 && pd > 0.01) {
+        const pdx2 = player.x - t.x, pdz2 = player.z - t.z;
+        const pd2 = pdx2 * pdx2 + pdz2 * pdz2;
+        const pd = Math.sqrt(pd2);
+        if (pd2 < 10.24 && pd > 0.01) {
           const push = (3.2 - pd);
           t.x += ((t.x - player.x) / pd) * push * 0.5;
           t.z += ((t.z - player.z) / pd) * push * 0.5;
