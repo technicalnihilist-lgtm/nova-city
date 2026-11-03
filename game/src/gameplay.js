@@ -313,6 +313,9 @@
     let pz = c.z - Math.sin(c.heading) * side;
     if (hitsBuilding(px, pz, 0.6, 1)) { px = c.x - Math.cos(c.heading) * side; pz = c.z + Math.sin(c.heading) * side; }
     heroPos.set(px, 0, pz);
+    // both sides can be blocked (parked against a wall) — never drop the hero
+    // inside the geometry, push him back out of any overlap
+    resolveCircle(heroPos, 0.55);
     heroY = 0;
     hero.visible = true;
     cockpit.visible = false;
