@@ -688,10 +688,14 @@
   }
 
   // ---------------------------------------------------------- weather
+  let rainOn = false;
+  let groundWet = null;
+
   function updateWeather(dt) {
     const raining = state.weather === 1;
     rain.visible = raining;
-    if (ground.material) {
+    if (ground.material && groundWet !== raining) {
+      groundWet = raining;
       ground.material.roughness = raining ? 0.34 : 0.92;
       ground.material.metalness = raining ? 0.32 : 0.04;
     }
@@ -699,6 +703,15 @@
       const p = rain.geometry.attributes.position;
       const arr = p.array;
       const cx = camera.position.x, cz = camera.position.z;
+      if (!rainOn) {
+        // the drop field is built around the origin, so switching rain on far
+        // from it looked dry until every drop had fallen once — reseed it here
+        for (let i = 0; i < RAIN_COUNT; i++) {
+          arr[i * 3] = cx + rnd(-28, 28);
+          arr[i * 3 + 1] = rnd(0, 30);
+          arr[i * 3 + 2] = cz + rnd(-28, 28);
+        }
+      }
       for (let i = 0; i < RAIN_COUNT; i++) {
         const iy = i * 3 + 1;
         arr[iy] -= (28 + (i % 7)) * dt;
@@ -710,6 +723,7 @@
       }
       p.needsUpdate = true;
     }
+    rainOn = raining;
   }
 
   // ---------------------------------------------------------- cores
@@ -811,7 +825,6 @@
     sun.target.position.set(camSm.tx, 0, camSm.tz);
     sun.target.updateMatrixWorld();
     sky.position.set(camera.position.x, 0, camera.position.z);
-    rain.position.set(0, 0, 0);
   }
 
   // ---------------------------------------------------------- minimap
