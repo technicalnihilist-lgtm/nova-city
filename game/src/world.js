@@ -705,7 +705,7 @@
     if (alongX) g.position.set(s, y, lane * CELL);
     else g.position.set(lane * CELL, y, s);
     coreGroup.add(g);
-    cores.push({ mesh: g, taken: false, spin: rnd(-1, 1) });
+    cores.push({ mesh: g, taken: false, spin: rnd(-1, 1), baseY: y });
   }
 
 

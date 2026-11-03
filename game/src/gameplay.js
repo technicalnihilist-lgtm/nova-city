@@ -708,7 +708,9 @@
     for (const c of cores) {
       if (c.taken) continue;
       c.mesh.rotation.y += (0.8 + c.spin) * dt;
-      c.mesh.position.y += Math.sin(t * 1.6 + c.mesh.position.x) * 0.008;
+      // hover from a fixed base height: the old code added a delta every frame,
+      // so the bob accumulated and cores slowly drifted out of reach
+      c.mesh.position.y = c.baseY + Math.sin(t * 1.6 + c.mesh.position.x) * 0.25;
       const d = c.mesh.position.distanceTo(V.set(heroPos.x, heroPos.y + 1.2, heroPos.z));
       if (d < 3.4) {
         c.taken = true;
