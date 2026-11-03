@@ -591,14 +591,48 @@
   const CAR_COLORS = [0xb8232a, 0x1f4fa8, 0xd8b23a, 0x2a7d4f, 0xd9dce0, 0x4a2f7a, 0x1f7d80, 0xc45a16, 0x2b2f36];
   const cars = [];
 
+  // Every car shares one set of geometries and all of the non-paint materials:
+  // building ~30 boxes and 8 materials per car wasted tens of MB and slowed the
+  // load. Only the paint material differs from car to car.
+  const CAR_GEO = {
+    body: new THREE.BoxGeometry(1.92, 0.50, 4.45),
+    skirt: new THREE.BoxGeometry(1.84, 0.26, 4.20),
+    hood: new THREE.BoxGeometry(1.78, 0.10, 1.45),
+    trunk: new THREE.BoxGeometry(1.78, 0.10, 1.15),
+    cabin: new THREE.BoxGeometry(1.62, 0.46, 1.95),
+    roof: new THREE.BoxGeometry(1.52, 0.07, 1.80),
+    windshield: new THREE.BoxGeometry(1.56, 0.52, 0.09),
+    rearGlass: new THREE.BoxGeometry(1.50, 0.46, 0.09),
+    grille: new THREE.BoxGeometry(1.86, 0.06, 0.16),
+    sideTrim: new THREE.BoxGeometry(0.10, 0.05, 1.9),
+    headlight: new THREE.BoxGeometry(0.46, 0.17, 0.10),
+    taillight: new THREE.BoxGeometry(0.44, 0.15, 0.09),
+    mirror: new THREE.BoxGeometry(0.09, 0.10, 0.16),
+    bumper: new THREE.BoxGeometry(1.90, 0.26, 0.18),
+    exhaust: new THREE.CylinderGeometry(0.06, 0.06, 0.14, 10),
+    strip: new THREE.BoxGeometry(0.86, 0.09, 0.06),
+    tyre: new THREE.CylinderGeometry(0.355, 0.355, 0.26, 16),
+    rim: new THREE.CylinderGeometry(0.21, 0.21, 0.27, 12)
+  };
+  const CAR_MAT = {
+    glass: new THREE.MeshStandardMaterial({ color: 0x0a0e14, roughness: 0.06, metalness: 0.6, envMapIntensity: 1.5 }),
+    rubber: new THREE.MeshStandardMaterial({ color: 0x0c0c0e, roughness: 0.95, metalness: 0.0 }),
+    chrome: new THREE.MeshStandardMaterial({ color: 0xc8ccd2, roughness: 0.18, metalness: 1.0, envMapIntensity: 1.3 }),
+    head: new THREE.MeshStandardMaterial({ color: 0xfff2d6, emissive: 0xffe9c0, emissiveIntensity: 2.4, roughness: 0.25 }),
+    tail: new THREE.MeshStandardMaterial({ color: 0x3a0a0a, emissive: 0xff2418, emissiveIntensity: 1.6, roughness: 0.4 }),
+    under: new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.7, metalness: 0.3 }),
+    bumper: new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.55, metalness: 0.35 }),
+    strip: new THREE.MeshStandardMaterial({ color: 0x8d1418, emissive: 0xff2418, emissiveIntensity: 0.5, roughness: 0.4 })
+  };
+
   function buildCar(colorHex) {
     const g = new THREE.Group();
     const paint = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.24, metalness: 0.72, envMapIntensity: 1.15 });
-    const glass = new THREE.MeshStandardMaterial({ color: 0x0a0e14, roughness: 0.06, metalness: 0.6, envMapIntensity: 1.5 });
-    const rubber = new THREE.MeshStandardMaterial({ color: 0x0c0c0e, roughness: 0.95, metalness: 0.0 });
-    const chrome = new THREE.MeshStandardMaterial({ color: 0xc8ccd2, roughness: 0.18, metalness: 1.0, envMapIntensity: 1.3 });
-    const head = new THREE.MeshStandardMaterial({ color: 0xfff2d6, emissive: 0xffe9c0, emissiveIntensity: 2.4, roughness: 0.25 });
-    const tail = new THREE.MeshStandardMaterial({ color: 0x3a0a0a, emissive: 0xff2418, emissiveIntensity: 1.6, roughness: 0.4 });
+    const glass = CAR_MAT.glass;
+    const rubber = CAR_MAT.rubber;
+    const chrome = CAR_MAT.chrome;
+    const head = CAR_MAT.head;
+    const tail = CAR_MAT.tail;
 
     const put = (geo, mat, x, y, z, rx) => {
       const m = new THREE.Mesh(geo, mat);
@@ -608,34 +642,34 @@
       g.add(m); return m;
     };
 
-    put(new THREE.BoxGeometry(1.92, 0.50, 4.45), paint, 0, 0.72, 0);
-    put(new THREE.BoxGeometry(1.84, 0.26, 4.20), new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.7, metalness: 0.3 }), 0, 0.45, 0);
-    put(new THREE.BoxGeometry(1.78, 0.10, 1.45), paint, 0, 0.99, 1.45);   // hood
-    put(new THREE.BoxGeometry(1.78, 0.10, 1.15), paint, 0, 0.99, -1.72);  // trunk
-    put(new THREE.BoxGeometry(1.62, 0.46, 1.95), glass, 0, 1.20, -0.18);  // cabin
-    put(new THREE.BoxGeometry(1.52, 0.07, 1.80), paint, 0, 1.44, -0.20);  // roof
-    put(new THREE.BoxGeometry(1.56, 0.52, 0.09), glass, 0, 1.16, 0.86, -0.55); // windshield
-    put(new THREE.BoxGeometry(1.50, 0.46, 0.09), glass, 0, 1.16, -1.16, 0.5);  // rear glass
-    put(new THREE.BoxGeometry(1.86, 0.06, 0.16), chrome, 0, 0.62, 2.22);  // grille trim
-    put(new THREE.BoxGeometry(0.10, 0.05, 1.9), chrome, 0.94, 0.86, -0.1);
-    put(new THREE.BoxGeometry(0.10, 0.05, 1.9), chrome, -0.94, 0.86, -0.1);
+    put(CAR_GEO.body, paint, 0, 0.72, 0);
+    put(CAR_GEO.skirt, CAR_MAT.under, 0, 0.45, 0);
+    put(CAR_GEO.hood, paint, 0, 0.99, 1.45);   // hood
+    put(CAR_GEO.trunk, paint, 0, 0.99, -1.72);  // trunk
+    put(CAR_GEO.cabin, glass, 0, 1.20, -0.18);  // cabin
+    put(CAR_GEO.roof, paint, 0, 1.44, -0.20);  // roof
+    put(CAR_GEO.windshield, glass, 0, 1.16, 0.86, -0.55); // windshield
+    put(CAR_GEO.rearGlass, glass, 0, 1.16, -1.16, 0.5);  // rear glass
+    put(CAR_GEO.grille, chrome, 0, 0.62, 2.22);  // grille trim
+    put(CAR_GEO.sideTrim, chrome, 0.94, 0.86, -0.1);
+    put(CAR_GEO.sideTrim, chrome, -0.94, 0.86, -0.1);
 
     [-0.62, 0.62].forEach((x) => {
-      put(new THREE.BoxGeometry(0.46, 0.17, 0.10), head, x, 0.80, 2.22);
-      put(new THREE.BoxGeometry(0.44, 0.15, 0.09), tail, x, 0.84, -2.22);
-      put(new THREE.BoxGeometry(0.09, 0.10, 0.16), chrome, x * 1.62, 1.12, 0.55); // mirrors
+      put(CAR_GEO.headlight, head, x, 0.80, 2.22);
+      put(CAR_GEO.taillight, tail, x, 0.84, -2.22);
+      put(CAR_GEO.mirror, chrome, x * 1.62, 1.12, 0.55); // mirrors
     });
     // bumpers, diffuser, exhausts
-    put(new THREE.BoxGeometry(1.90, 0.26, 0.18), new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.55, metalness: 0.35 }), 0, 0.55, -2.24);
-    put(new THREE.BoxGeometry(1.90, 0.26, 0.18), new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.55, metalness: 0.35 }), 0, 0.55, 2.24);
+    put(CAR_GEO.bumper, CAR_MAT.bumper, 0, 0.55, -2.24);
+    put(CAR_GEO.bumper, CAR_MAT.bumper, 0, 0.55, 2.24);
     [-0.42, 0.42].forEach(function (x) {
-      const ex = put(new THREE.CylinderGeometry(0.06, 0.06, 0.14, 10), chrome, x, 0.44, -2.26);
+      const ex = put(CAR_GEO.exhaust, chrome, x, 0.44, -2.26);
       ex.rotation.x = Math.PI / 2;
     });
-    put(new THREE.BoxGeometry(0.86, 0.09, 0.06), new THREE.MeshStandardMaterial({ color: 0x8d1418, emissive: 0xff2418, emissiveIntensity: 0.5, roughness: 0.4 }), 0, 0.98, -2.24);
+    put(CAR_GEO.strip, CAR_MAT.strip, 0, 0.98, -2.24);
 
-    const tyreGeo = new THREE.CylinderGeometry(0.355, 0.355, 0.26, 16);
-    const rimGeo = new THREE.CylinderGeometry(0.21, 0.21, 0.27, 12);
+    const tyreGeo = CAR_GEO.tyre;
+    const rimGeo = CAR_GEO.rim;
     const wheels = [];
     [[-0.94, 1.42], [0.94, 1.42], [-0.94, -1.45], [0.94, -1.45]].forEach((p) => {
       const pivot = new THREE.Group();
