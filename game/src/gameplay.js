@@ -249,8 +249,14 @@
       engOsc.start(); engOsc2.start();
     } catch (e) { actx = null; }
   }
-  function updateAudio() {
+  let audioT = 0;
+  function updateAudio(dt) {
     if (!actx || !engGain) return;
+    // the engine note only needs a few parameter ramps a second; scheduling
+    // four AudioParam automations every frame is wasted main-thread work
+    audioT += dt;
+    if (audioT < 0.05) return;
+    audioT = 0;
     const c = state.car;
     if (state.mode === 'drive' && c) {
       const f = 42 + (c.rpm / 7000) * 118;
@@ -932,7 +938,7 @@
     updateWeather(dt);
     updateCores(dt);
     updateCamera(dt);
-    updateAudio();
+    updateAudio(dt);
 
     // ---- HUD
     const driving = state.mode === 'drive' && state.car;
