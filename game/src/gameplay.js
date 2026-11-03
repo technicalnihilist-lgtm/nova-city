@@ -334,9 +334,14 @@
   let grounded = true;
   let heroY = 0;
 
+  // reused per-frame scratch vectors — allocating them every frame fed the GC
+  const footFwd = new THREE.Vector3();
+  const footRight = new THREE.Vector3();
+  const footDir = new THREE.Vector3();
+
   function updateFoot(dt) {
-    const fwd = new THREE.Vector3(-Math.sin(state.yaw), 0, -Math.cos(state.yaw));
-    const right = new THREE.Vector3(-fwd.z, 0, fwd.x);   // screen-right for this view
+    const fwd = footFwd.set(-Math.sin(state.yaw), 0, -Math.cos(state.yaw));
+    const right = footRight.set(-fwd.z, 0, fwd.x);   // screen-right for this view
     const mag = Math.min(1, Math.hypot(input.mx, input.my));
     const running = mag > 0.82 || keys['ShiftLeft'] || keys['ShiftRight'];
     const walkSpeed = running ? 9.5 : 5.6;
@@ -354,9 +359,9 @@
       showToast(state.flying ? 'Flight engaged' : 'Flight disengaged');
     }
 
-    const dir = new THREE.Vector3();
+    const dir = footDir.set(0, 0, 0);
     if (mag > 0.08) {
-      dir.copy(fwd).multiplyScalar(input.my).add(right.clone().multiplyScalar(input.mx)).clampLength(0, 1);
+      dir.copy(fwd).multiplyScalar(input.my).addScaledVector(right, input.mx).clampLength(0, 1);
     }
 
     let bobY = 0;
@@ -621,6 +626,7 @@
   const dayTop = new THREE.Color(0x1e3f72), dayMid = new THREE.Color(0x93b9dd), dayHor = new THREE.Color(0xf0d8bd);
   const duskTop = new THREE.Color(0x2a2f5a), duskMid = new THREE.Color(0xc98a6a), duskHor = new THREE.Color(0xffb36b);
   const nightTop = new THREE.Color(0x05070f), nightMid = new THREE.Color(0x0b1226), nightHor = new THREE.Color(0x18243c);
+  const rainFogCol = new THREE.Color(0x8b98a6), mistFogCol = new THREE.Color(0xa8b0b8);
   const tmpCol = new THREE.Color(), tmpCol2 = new THREE.Color();
 
   function updateDayNight(dt) {
@@ -649,8 +655,8 @@
 
     // fog follows the sky, weather tightens it
     tmpCol.copy(skyMat.uniforms.horCol.value);
-    if (state.weather === 1) { tmpCol.lerp(new THREE.Color(0x8b98a6), 0.65); scene.fog.near = 60; scene.fog.far = 320; }
-    else if (state.weather === 2) { tmpCol.lerp(new THREE.Color(0xa8b0b8), 0.8); scene.fog.near = 25; scene.fog.far = 130; }
+    if (state.weather === 1) { tmpCol.lerp(rainFogCol, 0.65); scene.fog.near = 60; scene.fog.far = 320; }
+    else if (state.weather === 2) { tmpCol.lerp(mistFogCol, 0.8); scene.fog.near = 25; scene.fog.far = 130; }
     else { scene.fog.near = 220; scene.fog.far = 900; }
     scene.fog.color.copy(tmpCol);
 
