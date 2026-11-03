@@ -2102,7 +2102,10 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     requestAnimationFrame(loop);
     let dt = (now - last) / 1000;
     last = now;
-    if (dt > 0.05) dt = 0.05;
+    // a backwards or NaN timestamp (tab restore, suspended clock) must not push
+    // the physics a negative or infinite step
+    if (!(dt > 0)) dt = 0;
+    else if (dt > 0.05) dt = 0.05;
 
     if (!state.started || document.body.classList.contains('portrait')) {
       updateCamera(dt);
