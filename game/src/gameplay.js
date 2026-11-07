@@ -160,7 +160,19 @@
     }
   }
   addEventListener('blur', releaseInputs);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) releaseInputs(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      releaseInputs();
+      // the engine hum kept running with the app in the background, burning
+      // battery for a sound nobody can hear
+      if (actx && actx.state === 'running') { try { actx.suspend(); } catch (e) {} }
+    } else if (state.started && actx && actx.state === 'suspended') {
+      try {
+        const p = actx.resume();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch (e) { /* the context resumes on the next tap */ }
+    }
+  });
 
   // ---------------------------------------------------------- collision
   function resolveCircle(p, radius) {
