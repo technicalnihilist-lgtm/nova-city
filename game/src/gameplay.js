@@ -390,6 +390,10 @@
       state.vel.y += GRAVITY * dt;
       heroPos.x += dir.x * walkSpeed * dt;
       heroPos.z += dir.z * walkSpeed * dt;
+      // walking never wrote the horizontal velocity, so the speedometer sat at
+      // 0 km/h for the whole on-foot part of the game
+      state.vel.x = dir.x * walkSpeed;
+      state.vel.z = dir.z * walkSpeed;
       heroY += state.vel.y * dt;
       if (heroY <= 0) { heroY = 0; state.vel.y = 0; grounded = true; }
       hero.rotation.x = lerp(hero.rotation.x, 0, 8 * dt);
