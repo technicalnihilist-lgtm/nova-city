@@ -282,6 +282,7 @@
   }
 
   // ---------------------------------------------------------- cars
+  const TAU = Math.PI * 2;
   const GEARS = [3.55, 2.30, 1.65, 1.25, 1.00, 0.82];
   const FINAL_DRIVE = 3.9;
   const WHEEL_R = 0.355;
@@ -496,10 +497,15 @@
     c.mesh.rotation.z = clamp(c.steer * c.speed * 0.004, -0.06, 0.06);
     const wheels = c.mesh.userData.wheels;
     const spin = c.speed * dt / WHEEL_R;
-    wheels.forEach((p, i) => {
-      p.children[0].rotation.x += spin;
-      if (i < 2) p.rotation.y = -c.steer;
-    });
+    // a plain loop: the per-frame closure was pure garbage, and the angle is
+    // wrapped because it was summed forever and lost float precision on a long
+    // drive
+    for (let w = 0; w < wheels.length; w++) {
+      const p = wheels[w];
+      const tyre = p.children[0];
+      tyre.rotation.x = (tyre.rotation.x + spin) % TAU;
+      if (w < 2) p.rotation.y = -c.steer;
+    }
 
     heroPos.set(c.x, 0, c.z);
     heroY = 0;
@@ -614,7 +620,11 @@
       t.mesh.position.set(t.x, 0, t.z);
       t.mesh.rotation.y = t.heading;
       const spin = t.speed * dt / WHEEL_R;
-      t.mesh.userData.wheels.forEach((w) => { w.children[0].rotation.x += spin; });
+      const tw = t.mesh.userData.wheels;
+      for (let w = 0; w < tw.length; w++) {
+        const tyre = tw[w].children[0];
+        tyre.rotation.x = (tyre.rotation.x + spin) % TAU;
+      }
 
       if (dist < 3.2) {
         const ni = t.node.i + t.dir[0], nk = t.node.k + t.dir[1];
