@@ -1039,6 +1039,12 @@
   document.getElementById('again').addEventListener('click', () => location.reload());
 
   addEventListener('resize', () => {
+    // the pixel ratio is fixed at load; after a zoom or a move to a display
+    // with another DPR the canvas was rendered at the old scale, which showed
+    // up as a soft or over-sampled picture. Only touch it when it changed, so
+    // a plain window resize still costs nothing.
+    const pr = Math.min(window.devicePixelRatio || 1, 1.5);
+    if (Math.abs(renderer.getPixelRatio() - pr) > 0.01) renderer.setPixelRatio(pr);
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
