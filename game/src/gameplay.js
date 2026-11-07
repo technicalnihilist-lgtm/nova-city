@@ -279,6 +279,9 @@
     g.gain.exponentialRampToValueAtTime(0.06, t + 0.02);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
     o.start(t); o.stop(t + 0.5);
+    // every horn press left an oscillator and a gain node wired to the
+    // destination forever; drop them when the beep ends
+    o.onended = function () { o.disconnect(); g.disconnect(); };
   }
 
   // ---------------------------------------------------------- cars
