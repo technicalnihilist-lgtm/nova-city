@@ -287,6 +287,9 @@
   const WHEEL_R = 0.355;
 
   function nearestCar() {
+    // the check is 2-D, so mid-flight over a parked car the hero could climb
+    // into it from 100 m up; require him to be on the ground
+    if (heroY > 2.2) return null;
     let best = null, bd = 1e9;
     for (const c of cars) {
       if (c.occupied) continue;
