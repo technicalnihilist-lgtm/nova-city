@@ -609,12 +609,19 @@
         const pdx = player.x - t.x, pdz = player.z - t.z;
         if (pdx * pdx + pdz * pdz < 64) target = 0;
       }
-      // simple separation from other AI cars ahead
+      // separation: yield only to a car that is ahead of us and travelling the
+      // same way. Slowing for every car within 6.5 m (including the ones behind
+      // and the cross traffic) made queues crawl and lock up at intersections.
+      const fhx = Math.sin(t.heading), fhz = Math.cos(t.heading);
       for (let n2 = 0; n2 < traffic.length; n2++) {
         const o = traffic[n2];
         if (o === t) continue;
         const ox = o.x - t.x, oz = o.z - t.z;
-        if (ox * ox + oz * oz < 42.25) { target = Math.min(target, 1.5); break; }
+        if (ox * ox + oz * oz > 42.25) continue;
+        if (ox * fhx + oz * fhz < 0.5) continue;              // behind us
+        if (fhx * Math.sin(o.heading) + fhz * Math.cos(o.heading) < 0.2) continue; // crossing or oncoming
+        target = Math.min(target, 1.5);
+        break;
       }
       t.speed = lerp(t.speed, target, 1 - Math.exp(-2.6 * dt));
 
