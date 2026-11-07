@@ -1009,6 +1009,17 @@
   }
 
   // ---------------------------------------------------------- start
+  // orientation.lock() returns undefined on browsers that do not implement it
+  // and can throw synchronously, so calling .catch() on the result raised an
+  // uncaught TypeError on the way into the game
+  function lockLandscape() {
+    try {
+      const o = screen.orientation;
+      if (!o || typeof o.lock !== 'function') return;
+      const p = o.lock('landscape');
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch (e) { /* not supported on this browser */ }
+  }
   document.getElementById('play').addEventListener('click', () => {
     document.getElementById('start').classList.add('hide');
     state.started = true;
@@ -1018,14 +1029,11 @@
     showToast('Drag to look · C for camera · R for weather');
     const el = document.documentElement;
     if (el.requestFullscreen) {
-      const p = el.requestFullscreen();
-      if (p && p.then) {
-        p.then(() => {
-          if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
-        }).catch(() => {});
-      }
-    } else if (screen.orientation && screen.orientation.lock) {
-      screen.orientation.lock('landscape').catch(() => {});
+      let p = null;
+      try { p = el.requestFullscreen(); } catch (e) { p = null; }
+      if (p && p.then) p.then(lockLandscape).catch(() => {});
+    } else {
+      lockLandscape();
     }
   });
   document.getElementById('again').addEventListener('click', () => location.reload());
