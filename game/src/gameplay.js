@@ -793,6 +793,10 @@
       const k = 1 - Math.exp(-26 * step);
       camera.position.lerp(camVec, camSm.ready ? k : 1);
       camera.lookAt(camLook);
+      // the sun/shadow focus is driven from camSm; leaving it stale in the hood
+      // and cockpit views parked the shadow frustum behind the car, so the car
+      // and the street around it lost their shadows after a camera switch
+      camSm.tx = c.x; camSm.ty = 1.2; camSm.tz = c.z;
       cockpit.visible = state.camMode === 2;
       c.mesh.visible = state.camMode !== 2;
       if (cockpit.visible) {
