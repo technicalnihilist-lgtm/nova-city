@@ -1063,6 +1063,16 @@
   });
 
   refreshPanels();
+  // Compile every program once while the start screen is up. Materials used to
+  // be compiled the first time their geometry entered the view, which showed up
+  // as a stutter on the first look at the car, the cockpit or a new part of the
+  // city. The cockpit is hidden at this point, so show it for the compile pass.
+  try {
+    const cockpitWasVisible = cockpit.visible;
+    cockpit.visible = true;
+    renderer.compile(scene, camera);
+    cockpit.visible = cockpitWasVisible;
+  } catch (e) { /* compiling early is an optimisation, never a requirement */ }
   window.__game = {
     state: state, hero: hero, cars: cars, cores: cores, buildings: buildings,
     parts: heroParts, traffic: traffic, cam: camera, renderer: renderer, scene: scene, frames: 0,
