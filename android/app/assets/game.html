@@ -1365,7 +1365,19 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     }
   }
   addEventListener('blur', releaseInputs);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) releaseInputs(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      releaseInputs();
+      // the engine hum kept running with the app in the background, burning
+      // battery for a sound nobody can hear
+      if (actx && actx.state === 'running') { try { actx.suspend(); } catch (e) {} }
+    } else if (state.started && actx && actx.state === 'suspended') {
+      try {
+        const p = actx.resume();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch (e) { /* the context resumes on the next tap */ }
+    }
+  });
 
   // ---------------------------------------------------------- collision
   function resolveCircle(p, radius) {
@@ -1484,14 +1496,21 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     g.gain.exponentialRampToValueAtTime(0.06, t + 0.02);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
     o.start(t); o.stop(t + 0.5);
+    // every horn press left an oscillator and a gain node wired to the
+    // destination forever; drop them when the beep ends
+    o.onended = function () { o.disconnect(); g.disconnect(); };
   }
 
   // ---------------------------------------------------------- cars
+  const TAU = Math.PI * 2;
   const GEARS = [3.55, 2.30, 1.65, 1.25, 1.00, 0.82];
   const FINAL_DRIVE = 3.9;
   const WHEEL_R = 0.355;
 
   function nearestCar() {
+    // the check is 2-D, so mid-flight over a parked car the hero could climb
+    // into it from 100 m up; require him to be on the ground
+    if (heroY > 2.2) return null;
     let best = null, bd = 1e9;
     for (const c of cars) {
       if (c.occupied) continue;
@@ -1595,6 +1614,10 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       state.vel.y += GRAVITY * dt;
       heroPos.x += dir.x * walkSpeed * dt;
       heroPos.z += dir.z * walkSpeed * dt;
+      // walking never wrote the horizontal velocity, so the speedometer sat at
+      // 0 km/h for the whole on-foot part of the game
+      state.vel.x = dir.x * walkSpeed;
+      state.vel.z = dir.z * walkSpeed;
       heroY += state.vel.y * dt;
       if (heroY <= 0) { heroY = 0; state.vel.y = 0; grounded = true; }
       hero.rotation.x = lerp(hero.rotation.x, 0, 8 * dt);
@@ -1694,10 +1717,15 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     c.mesh.rotation.z = clamp(c.steer * c.speed * 0.004, -0.06, 0.06);
     const wheels = c.mesh.userData.wheels;
     const spin = c.speed * dt / WHEEL_R;
-    wheels.forEach((p, i) => {
-      p.children[0].rotation.x += spin;
-      if (i < 2) p.rotation.y = -c.steer;
-    });
+    // a plain loop: the per-frame closure was pure garbage, and the angle is
+    // wrapped because it was summed forever and lost float precision on a long
+    // drive
+    for (let w = 0; w < wheels.length; w++) {
+      const p = wheels[w];
+      const tyre = p.children[0];
+      tyre.rotation.x = (tyre.rotation.x + spin) % TAU;
+      if (w < 2) p.rotation.y = -c.steer;
+    }
 
     heroPos.set(c.x, 0, c.z);
     heroY = 0;
@@ -1798,12 +1826,19 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         const pdx = player.x - t.x, pdz = player.z - t.z;
         if (pdx * pdx + pdz * pdz < 64) target = 0;
       }
-      // simple separation from other AI cars ahead
+      // separation: yield only to a car that is ahead of us and travelling the
+      // same way. Slowing for every car within 6.5 m (including the ones behind
+      // and the cross traffic) made queues crawl and lock up at intersections.
+      const fhx = Math.sin(t.heading), fhz = Math.cos(t.heading);
       for (let n2 = 0; n2 < traffic.length; n2++) {
         const o = traffic[n2];
         if (o === t) continue;
         const ox = o.x - t.x, oz = o.z - t.z;
-        if (ox * ox + oz * oz < 42.25) { target = Math.min(target, 1.5); break; }
+        if (ox * ox + oz * oz > 42.25) continue;
+        if (ox * fhx + oz * fhz < 0.5) continue;              // behind us
+        if (fhx * Math.sin(o.heading) + fhz * Math.cos(o.heading) < 0.2) continue; // crossing or oncoming
+        target = Math.min(target, 1.5);
+        break;
       }
       t.speed = lerp(t.speed, target, 1 - Math.exp(-2.6 * dt));
 
@@ -1812,7 +1847,11 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       t.mesh.position.set(t.x, 0, t.z);
       t.mesh.rotation.y = t.heading;
       const spin = t.speed * dt / WHEEL_R;
-      t.mesh.userData.wheels.forEach((w) => { w.children[0].rotation.x += spin; });
+      const tw = t.mesh.userData.wheels;
+      for (let w = 0; w < tw.length; w++) {
+        const tyre = tw[w].children[0];
+        tyre.rotation.x = (tyre.rotation.x + spin) % TAU;
+      }
 
       if (dist < 3.2) {
         const ni = t.node.i + t.dir[0], nk = t.node.k + t.dir[1];
@@ -1998,6 +2037,10 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       const k = 1 - Math.exp(-26 * step);
       camera.position.lerp(camVec, camSm.ready ? k : 1);
       camera.lookAt(camLook);
+      // the sun/shadow focus is driven from camSm; leaving it stale in the hood
+      // and cockpit views parked the shadow frustum behind the car, so the car
+      // and the street around it lost their shadows after a camera switch
+      camSm.tx = c.x; camSm.ty = 1.2; camSm.tz = c.z;
       cockpit.visible = state.camMode === 2;
       c.mesh.visible = state.camMode !== 2;
       if (cockpit.visible) {
@@ -2183,6 +2226,17 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
   }
 
   // ---------------------------------------------------------- start
+  // orientation.lock() returns undefined on browsers that do not implement it
+  // and can throw synchronously, so calling .catch() on the result raised an
+  // uncaught TypeError on the way into the game
+  function lockLandscape() {
+    try {
+      const o = screen.orientation;
+      if (!o || typeof o.lock !== 'function') return;
+      const p = o.lock('landscape');
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch (e) { /* not supported on this browser */ }
+  }
   document.getElementById('play').addEventListener('click', () => {
     document.getElementById('start').classList.add('hide');
     state.started = true;
@@ -2192,25 +2246,38 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     showToast('Drag to look · C for camera · R for weather');
     const el = document.documentElement;
     if (el.requestFullscreen) {
-      const p = el.requestFullscreen();
-      if (p && p.then) {
-        p.then(() => {
-          if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
-        }).catch(() => {});
-      }
-    } else if (screen.orientation && screen.orientation.lock) {
-      screen.orientation.lock('landscape').catch(() => {});
+      let p = null;
+      try { p = el.requestFullscreen(); } catch (e) { p = null; }
+      if (p && p.then) p.then(lockLandscape).catch(() => {});
+    } else {
+      lockLandscape();
     }
   });
   document.getElementById('again').addEventListener('click', () => location.reload());
 
   addEventListener('resize', () => {
+    // the pixel ratio is fixed at load; after a zoom or a move to a display
+    // with another DPR the canvas was rendered at the old scale, which showed
+    // up as a soft or over-sampled picture. Only touch it when it changed, so
+    // a plain window resize still costs nothing.
+    const pr = Math.min(window.devicePixelRatio || 1, 1.5);
+    if (Math.abs(renderer.getPixelRatio() - pr) > 0.01) renderer.setPixelRatio(pr);
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
   refreshPanels();
+  // Compile every program once while the start screen is up. Materials used to
+  // be compiled the first time their geometry entered the view, which showed up
+  // as a stutter on the first look at the car, the cockpit or a new part of the
+  // city. The cockpit is hidden at this point, so show it for the compile pass.
+  try {
+    const cockpitWasVisible = cockpit.visible;
+    cockpit.visible = true;
+    renderer.compile(scene, camera);
+    cockpit.visible = cockpitWasVisible;
+  } catch (e) { /* compiling early is an optimisation, never a requirement */ }
   window.__game = {
     state: state, hero: hero, cars: cars, cores: cores, buildings: buildings,
     parts: heroParts, traffic: traffic, cam: camera, renderer: renderer, scene: scene, frames: 0,
