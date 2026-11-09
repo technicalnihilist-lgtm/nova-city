@@ -655,7 +655,11 @@
         tyre.rotation.x = (tyre.rotation.x + spin) % TAU;
       }
 
-      if (dist < 3.2) {
+      // measured after the step: a car doing 12 m/s covers 0.6 m per frame, so
+      // the pre-move distance let it overshoot the node goal, find the goal
+      // behind itself and spin on the spot instead of taking the intersection
+      const ndx = gx - t.x, ndz = gz - t.z;
+      if (ndx * ndx + ndz * ndz < 10.24) {
         const ni = t.node.i + t.dir[0], nk = t.node.k + t.dir[1];
         if (ni < -GRID - 1 || ni > GRID || nk < -GRID - 1 || nk > GRID) {
           t.dir = [-t.dir[0], -t.dir[1]];
