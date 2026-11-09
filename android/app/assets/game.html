@@ -555,6 +555,66 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     return mesh;
   }
 
+  // ---------------------------------------------------------- mesh merging
+  // A car is ~30 small boxes and cylinders, so 37 cars cost well over a
+  // thousand draw calls a frame (and again in the shadow pass). Bake the
+  // static parts into one geometry per material: a car then costs one draw
+  // call per material. Wheels stay separate because they spin and steer.
+  function mergeByMaterial(parts) {
+    const buckets = new Map();
+    for (let i = 0; i < parts.length; i++) {
+      const it = parts[i];
+      let b = buckets.get(it.mat);
+      if (!b) { b = []; buckets.set(it.mat, b); }
+      b.push(it);
+    }
+    const out = [];
+    const nrm = new THREE.Matrix3();
+    const v = new THREE.Vector3();
+    buckets.forEach(function (items, mat) {
+      let verts = 0, inds = 0;
+      for (let i = 0; i < items.length; i++) {
+        const geo = items[i].geo;
+        verts += geo.attributes.position.count;
+        inds += geo.index ? geo.index.count : geo.attributes.position.count;
+      }
+      const pos = new Float32Array(verts * 3);
+      const nor = new Float32Array(verts * 3);
+      const uv = new Float32Array(verts * 2);
+      const idx = verts > 65535 ? new Uint32Array(inds) : new Uint16Array(inds);
+      let vo = 0, io = 0;
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i], geo = it.geo;
+        const P = geo.attributes.position, N = geo.attributes.normal, U = geo.attributes.uv;
+        nrm.getNormalMatrix(it.matrix);
+        for (let k = 0; k < P.count; k++) {
+          v.fromBufferAttribute(P, k).applyMatrix4(it.matrix);
+          pos[(vo + k) * 3] = v.x; pos[(vo + k) * 3 + 1] = v.y; pos[(vo + k) * 3 + 2] = v.z;
+          v.fromBufferAttribute(N, k).applyMatrix3(nrm).normalize();
+          nor[(vo + k) * 3] = v.x; nor[(vo + k) * 3 + 1] = v.y; nor[(vo + k) * 3 + 2] = v.z;
+          uv[(vo + k) * 2] = U ? U.getX(k) : 0;
+          uv[(vo + k) * 2 + 1] = U ? U.getY(k) : 0;
+        }
+        if (geo.index) {
+          for (let k = 0; k < geo.index.count; k++) idx[io + k] = geo.index.getX(k) + vo;
+          io += geo.index.count;
+        } else {
+          for (let k = 0; k < P.count; k++) idx[io + k] = k + vo;
+          io += P.count;
+        }
+        vo += P.count;
+      }
+      const merged = new THREE.BufferGeometry();
+      merged.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      merged.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+      merged.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      merged.setIndex(new THREE.BufferAttribute(idx, 1));
+      merged.computeBoundingSphere();
+      out.push({ mat: mat, geo: merged });
+    });
+    return out;
+  }
+
   // ---------------------------------------------------------- textures
   const asphaltTex = canvasTexture(512, function (ctx, S) {
     ctx.fillStyle = '#313235'; ctx.fillRect(0, 0, S, S);
@@ -1012,21 +1072,28 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     strip: new THREE.MeshStandardMaterial({ color: 0x8d1418, emissive: 0xff2418, emissiveIntensity: 0.5, roughness: 0.4 })
   };
 
+  // Cars of the same paint colour share one paint material and one set of
+  // merged body geometries, so the fleet holds a handful of paint materials
+  // instead of one per car and does not duplicate the merged vertex buffers
+  // 37 times. The non-paint materials were already shared.
+  const CAR_CACHE = new Map();
+
   function buildCar(colorHex) {
     const g = new THREE.Group();
-    const paint = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.24, metalness: 0.72, envMapIntensity: 1.15 });
+    const cached = CAR_CACHE.get(colorHex);
+    const paint = cached ? cached.paint
+      : new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.24, metalness: 0.72, envMapIntensity: 1.15 });
     const glass = CAR_MAT.glass;
     const rubber = CAR_MAT.rubber;
     const chrome = CAR_MAT.chrome;
     const head = CAR_MAT.head;
     const tail = CAR_MAT.tail;
 
+    const parts = [];
     const put = (geo, mat, x, y, z, rx) => {
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(x, y, z);
-      if (rx) m.rotation.x = rx;
-      m.castShadow = true; m.receiveShadow = true;
-      g.add(m); return m;
+      const m = new THREE.Matrix4().makeRotationX(rx || 0);
+      m.setPosition(x, y, z);
+      parts.push({ geo: geo, mat: mat, matrix: m });
     };
 
     put(CAR_GEO.body, paint, 0, 0.72, 0);
@@ -1050,10 +1117,21 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     put(CAR_GEO.bumper, CAR_MAT.bumper, 0, 0.55, -2.24);
     put(CAR_GEO.bumper, CAR_MAT.bumper, 0, 0.55, 2.24);
     [-0.42, 0.42].forEach(function (x) {
-      const ex = put(CAR_GEO.exhaust, chrome, x, 0.44, -2.26);
-      ex.rotation.x = Math.PI / 2;
+      put(CAR_GEO.exhaust, chrome, x, 0.44, -2.26, Math.PI / 2);
     });
     put(CAR_GEO.strip, CAR_MAT.strip, 0, 0.98, -2.24);
+
+    // one mesh per material instead of one mesh per part
+    let merged = cached && cached.merged;
+    if (!merged) {
+      merged = mergeByMaterial(parts);
+      CAR_CACHE.set(colorHex, { paint: paint, merged: merged });
+    }
+    for (let i = 0; i < merged.length; i++) {
+      const m = new THREE.Mesh(merged[i].geo, merged[i].mat);
+      m.castShadow = true; m.receiveShadow = true;
+      g.add(m);
+    }
 
     const tyreGeo = CAR_GEO.tyre;
     const rimGeo = CAR_GEO.rim;
@@ -1236,6 +1314,10 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
   addEventListener('keydown', (e) => {
     keys[e.code] = true;
     if (e.code === 'Space') e.preventDefault();
+    // a held key repeats keydown events; the one-shot actions below must fire
+    // once per press, or holding F/C/R/E/H flipped flight, the camera, the
+    // weather and the horn many times a second
+    if (e.repeat) return;
     if (e.code === 'KeyF') input.fly = true;
     if (e.code === 'KeyE') input.act = true;
     if (e.code === 'KeyC') input.cam = true;
@@ -1272,10 +1354,14 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
   const stickEl = document.getElementById('stick');
   const knobEl = document.getElementById('knob');
   const R = 50;
+  // the stick does not move while a finger is on it, so the rect is measured
+  // once per touch instead of on every pointermove (a forced layout read at
+  // the full pointer rate)
+  let stickRect = null;
 
   function stickMove(e) {
     if (!stick.active || e.pointerId !== stick.id) return;
-    const r = stickEl.getBoundingClientRect();
+    const r = stickRect || stickEl.getBoundingClientRect();
     let dx = e.clientX - (r.left + r.width / 2);
     let dy = e.clientY - (r.top + r.height / 2);
     const d = Math.hypot(dx, dy) || 1;
@@ -1288,12 +1374,14 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
   function stickEnd(e) {
     if (e.pointerId !== stick.id) return;
     stick.active = false; stick.id = null;
+    stickRect = null;
     knobEl.style.transform = 'translate(0,0)';
     input.mx = 0; input.my = 0;
     stickEl.classList.remove('on');
   }
   stickEl.addEventListener('pointerdown', (e) => {
     e.preventDefault(); stickEl.setPointerCapture(e.pointerId);
+    stickRect = stickEl.getBoundingClientRect();
     stick.active = true; stick.id = e.pointerId; stickEl.classList.add('on'); stickMove(e);
   });
   stickEl.addEventListener('pointermove', stickMove);
@@ -1552,6 +1640,9 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     c.mesh.visible = true;
     state.vel.set(0, 0, 0);
     state.car = null;
+    // the hood and cockpit views only exist inside a car; leaving one of them
+    // selected meant the next car was entered straight into the cockpit
+    state.camMode = 0;
     refreshPanels();
   }
 
@@ -1853,7 +1944,11 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         tyre.rotation.x = (tyre.rotation.x + spin) % TAU;
       }
 
-      if (dist < 3.2) {
+      // measured after the step: a car doing 12 m/s covers 0.6 m per frame, so
+      // the pre-move distance let it overshoot the node goal, find the goal
+      // behind itself and spin on the spot instead of taking the intersection
+      const ndx = gx - t.x, ndz = gz - t.z;
+      if (ndx * ndx + ndz * ndz < 10.24) {
         const ni = t.node.i + t.dir[0], nk = t.node.k + t.dir[1];
         if (ni < -GRID - 1 || ni > GRID || nk < -GRID - 1 || nk > GRID) {
           t.dir = [-t.dir[0], -t.dir[1]];
@@ -1869,11 +1964,13 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       if (player) {
         const pdx2 = player.x - t.x, pdz2 = player.z - t.z;
         const pd2 = pdx2 * pdx2 + pdz2 * pdz2;
-        const pd = Math.sqrt(pd2);
-        if (pd2 < 10.24 && pd > 0.01) {
-          const push = (3.2 - pd);
-          t.x += ((t.x - player.x) / pd) * push * 0.5;
-          t.z += ((t.z - player.z) / pd) * push * 0.5;
+        if (pd2 < 10.24 && pd2 > 0.0001) {
+          const pd = Math.sqrt(pd2);
+          const push = (3.2 - pd) / pd * 0.5;
+          const nx = t.x - pdx2 * push, nz = t.z - pdz2 * push;
+          // shoving an AI car through a wall left it embedded in the building,
+          // where it could never recover; refuse the push instead
+          if (!hitsBuilding(nx, nz, 1.3, 1)) { t.x = nx; t.z = nz; }
         }
       }
     }
@@ -2178,8 +2275,12 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     if (input.horn) { input.horn = false; horn(); }
 
     if (state.mode === 'drive') updateCar(dt); else updateFoot(dt);
-    const mm = Math.min(1, Math.hypot(input.mx, input.my));
-    poseHero(dt, mm, mm > 0.82);
+    // the hero is hidden while driving, so posing him was ten node rotations
+    // and a matrix rebuild per frame for something nobody can see
+    if (hero.visible) {
+      const mm = Math.min(1, Math.hypot(input.mx, input.my));
+      poseHero(dt, mm, mm > 0.82);
+    }
 
     updateTraffic(dt);
     updateDayNight(dt);
@@ -2241,7 +2342,14 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     document.getElementById('start').classList.add('hide');
     state.started = true;
     initAudio();
-    if (actx && actx.state === 'suspended') actx.resume();
+    // resume() rejects when the browser still wants a real gesture; the
+    // unhandled rejection landed in the console on every entry
+    if (actx && actx.state === 'suspended') {
+      try {
+        const p = actx.resume();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch (e) { /* audio stays off until the next gesture */ }
+    }
     refreshPanels();
     showToast('Drag to look · C for camera · R for weather');
     const el = document.documentElement;
@@ -2255,16 +2363,23 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
   });
   document.getElementById('again').addEventListener('click', () => location.reload());
 
+  const sizeTmp = new THREE.Vector2();
   addEventListener('resize', () => {
     // the pixel ratio is fixed at load; after a zoom or a move to a display
     // with another DPR the canvas was rendered at the old scale, which showed
-    // up as a soft or over-sampled picture. Only touch it when it changed, so
-    // a plain window resize still costs nothing.
+    // up as a soft or over-sampled picture. Only touch it when it changed.
     const pr = Math.min(window.devicePixelRatio || 1, 1.5);
-    if (Math.abs(renderer.getPixelRatio() - pr) > 0.01) renderer.setPixelRatio(pr);
-    camera.aspect = window.innerWidth / window.innerHeight;
+    const prChanged = Math.abs(renderer.getPixelRatio() - pr) > 0.01;
+    if (prChanged) renderer.setPixelRatio(pr);   // this resizes the buffer too
+    const w = window.innerWidth, h = window.innerHeight;
+    const s = renderer.getSize(sizeTmp);
+    // mobile browsers fire resize on every URL-bar slide; reallocating the
+    // drawing buffer and the projection matrix for an unchanged size was pure
+    // work (and garbage) on every one of them
+    if (!prChanged && s.x === w && s.y === h) return;
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(w, h);
   });
 
   refreshPanels();
