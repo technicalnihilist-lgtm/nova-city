@@ -685,9 +685,17 @@
     strip: new THREE.MeshStandardMaterial({ color: 0x8d1418, emissive: 0xff2418, emissiveIntensity: 0.5, roughness: 0.4 })
   };
 
+  // Cars of the same paint colour share one paint material and one set of
+  // merged body geometries, so the fleet holds a handful of paint materials
+  // instead of one per car and does not duplicate the merged vertex buffers
+  // 37 times. The non-paint materials were already shared.
+  const CAR_CACHE = new Map();
+
   function buildCar(colorHex) {
     const g = new THREE.Group();
-    const paint = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.24, metalness: 0.72, envMapIntensity: 1.15 });
+    const cached = CAR_CACHE.get(colorHex);
+    const paint = cached ? cached.paint
+      : new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.24, metalness: 0.72, envMapIntensity: 1.15 });
     const glass = CAR_MAT.glass;
     const rubber = CAR_MAT.rubber;
     const chrome = CAR_MAT.chrome;
@@ -727,7 +735,11 @@
     put(CAR_GEO.strip, CAR_MAT.strip, 0, 0.98, -2.24);
 
     // one mesh per material instead of one mesh per part
-    const merged = mergeByMaterial(parts);
+    let merged = cached && cached.merged;
+    if (!merged) {
+      merged = mergeByMaterial(parts);
+      CAR_CACHE.set(colorHex, { paint: paint, merged: merged });
+    }
     for (let i = 0; i < merged.length; i++) {
       const m = new THREE.Mesh(merged[i].geo, merged[i].mat);
       m.castShadow = true; m.receiveShadow = true;
