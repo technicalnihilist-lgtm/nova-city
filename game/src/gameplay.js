@@ -681,11 +681,13 @@
       if (player) {
         const pdx2 = player.x - t.x, pdz2 = player.z - t.z;
         const pd2 = pdx2 * pdx2 + pdz2 * pdz2;
-        const pd = Math.sqrt(pd2);
-        if (pd2 < 10.24 && pd > 0.01) {
-          const push = (3.2 - pd);
-          t.x += ((t.x - player.x) / pd) * push * 0.5;
-          t.z += ((t.z - player.z) / pd) * push * 0.5;
+        if (pd2 < 10.24 && pd2 > 0.0001) {
+          const pd = Math.sqrt(pd2);
+          const push = (3.2 - pd) / pd * 0.5;
+          const nx = t.x - pdx2 * push, nz = t.z - pdz2 * push;
+          // shoving an AI car through a wall left it embedded in the building,
+          // where it could never recover; refuse the push instead
+          if (!hitsBuilding(nx, nz, 1.3, 1)) { t.x = nx; t.z = nz; }
         }
       }
     }
