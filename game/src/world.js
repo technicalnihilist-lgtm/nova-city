@@ -168,6 +168,66 @@
     return mesh;
   }
 
+  // ---------------------------------------------------------- mesh merging
+  // A car is ~30 small boxes and cylinders, so 37 cars cost well over a
+  // thousand draw calls a frame (and again in the shadow pass). Bake the
+  // static parts into one geometry per material: a car then costs one draw
+  // call per material. Wheels stay separate because they spin and steer.
+  function mergeByMaterial(parts) {
+    const buckets = new Map();
+    for (let i = 0; i < parts.length; i++) {
+      const it = parts[i];
+      let b = buckets.get(it.mat);
+      if (!b) { b = []; buckets.set(it.mat, b); }
+      b.push(it);
+    }
+    const out = [];
+    const nrm = new THREE.Matrix3();
+    const v = new THREE.Vector3();
+    buckets.forEach(function (items, mat) {
+      let verts = 0, inds = 0;
+      for (let i = 0; i < items.length; i++) {
+        const geo = items[i].geo;
+        verts += geo.attributes.position.count;
+        inds += geo.index ? geo.index.count : geo.attributes.position.count;
+      }
+      const pos = new Float32Array(verts * 3);
+      const nor = new Float32Array(verts * 3);
+      const uv = new Float32Array(verts * 2);
+      const idx = verts > 65535 ? new Uint32Array(inds) : new Uint16Array(inds);
+      let vo = 0, io = 0;
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i], geo = it.geo;
+        const P = geo.attributes.position, N = geo.attributes.normal, U = geo.attributes.uv;
+        nrm.getNormalMatrix(it.matrix);
+        for (let k = 0; k < P.count; k++) {
+          v.fromBufferAttribute(P, k).applyMatrix4(it.matrix);
+          pos[(vo + k) * 3] = v.x; pos[(vo + k) * 3 + 1] = v.y; pos[(vo + k) * 3 + 2] = v.z;
+          v.fromBufferAttribute(N, k).applyMatrix3(nrm).normalize();
+          nor[(vo + k) * 3] = v.x; nor[(vo + k) * 3 + 1] = v.y; nor[(vo + k) * 3 + 2] = v.z;
+          uv[(vo + k) * 2] = U ? U.getX(k) : 0;
+          uv[(vo + k) * 2 + 1] = U ? U.getY(k) : 0;
+        }
+        if (geo.index) {
+          for (let k = 0; k < geo.index.count; k++) idx[io + k] = geo.index.getX(k) + vo;
+          io += geo.index.count;
+        } else {
+          for (let k = 0; k < P.count; k++) idx[io + k] = k + vo;
+          io += P.count;
+        }
+        vo += P.count;
+      }
+      const merged = new THREE.BufferGeometry();
+      merged.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      merged.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+      merged.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      merged.setIndex(new THREE.BufferAttribute(idx, 1));
+      merged.computeBoundingSphere();
+      out.push({ mat: mat, geo: merged });
+    });
+    return out;
+  }
+
   // ---------------------------------------------------------- textures
   const asphaltTex = canvasTexture(512, function (ctx, S) {
     ctx.fillStyle = '#313235'; ctx.fillRect(0, 0, S, S);
@@ -634,12 +694,11 @@
     const head = CAR_MAT.head;
     const tail = CAR_MAT.tail;
 
+    const parts = [];
     const put = (geo, mat, x, y, z, rx) => {
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(x, y, z);
-      if (rx) m.rotation.x = rx;
-      m.castShadow = true; m.receiveShadow = true;
-      g.add(m); return m;
+      const m = new THREE.Matrix4().makeRotationX(rx || 0);
+      m.setPosition(x, y, z);
+      parts.push({ geo: geo, mat: mat, matrix: m });
     };
 
     put(CAR_GEO.body, paint, 0, 0.72, 0);
@@ -663,10 +722,17 @@
     put(CAR_GEO.bumper, CAR_MAT.bumper, 0, 0.55, -2.24);
     put(CAR_GEO.bumper, CAR_MAT.bumper, 0, 0.55, 2.24);
     [-0.42, 0.42].forEach(function (x) {
-      const ex = put(CAR_GEO.exhaust, chrome, x, 0.44, -2.26);
-      ex.rotation.x = Math.PI / 2;
+      put(CAR_GEO.exhaust, chrome, x, 0.44, -2.26, Math.PI / 2);
     });
     put(CAR_GEO.strip, CAR_MAT.strip, 0, 0.98, -2.24);
+
+    // one mesh per material instead of one mesh per part
+    const merged = mergeByMaterial(parts);
+    for (let i = 0; i < merged.length; i++) {
+      const m = new THREE.Mesh(merged[i].geo, merged[i].mat);
+      m.castShadow = true; m.receiveShadow = true;
+      g.add(m);
+    }
 
     const tyreGeo = CAR_GEO.tyre;
     const rimGeo = CAR_GEO.rim;
