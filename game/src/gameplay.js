@@ -980,8 +980,12 @@
     if (input.horn) { input.horn = false; horn(); }
 
     if (state.mode === 'drive') updateCar(dt); else updateFoot(dt);
-    const mm = Math.min(1, Math.hypot(input.mx, input.my));
-    poseHero(dt, mm, mm > 0.82);
+    // the hero is hidden while driving, so posing him was ten node rotations
+    // and a matrix rebuild per frame for something nobody can see
+    if (hero.visible) {
+      const mm = Math.min(1, Math.hypot(input.mx, input.my));
+      poseHero(dt, mm, mm > 0.82);
+    }
 
     updateTraffic(dt);
     updateDayNight(dt);
