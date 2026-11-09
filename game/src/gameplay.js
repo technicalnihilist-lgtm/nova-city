@@ -71,10 +71,14 @@
   const stickEl = document.getElementById('stick');
   const knobEl = document.getElementById('knob');
   const R = 50;
+  // the stick does not move while a finger is on it, so the rect is measured
+  // once per touch instead of on every pointermove (a forced layout read at
+  // the full pointer rate)
+  let stickRect = null;
 
   function stickMove(e) {
     if (!stick.active || e.pointerId !== stick.id) return;
-    const r = stickEl.getBoundingClientRect();
+    const r = stickRect || stickEl.getBoundingClientRect();
     let dx = e.clientX - (r.left + r.width / 2);
     let dy = e.clientY - (r.top + r.height / 2);
     const d = Math.hypot(dx, dy) || 1;
@@ -87,12 +91,14 @@
   function stickEnd(e) {
     if (e.pointerId !== stick.id) return;
     stick.active = false; stick.id = null;
+    stickRect = null;
     knobEl.style.transform = 'translate(0,0)';
     input.mx = 0; input.my = 0;
     stickEl.classList.remove('on');
   }
   stickEl.addEventListener('pointerdown', (e) => {
     e.preventDefault(); stickEl.setPointerCapture(e.pointerId);
+    stickRect = stickEl.getBoundingClientRect();
     stick.active = true; stick.id = e.pointerId; stickEl.classList.add('on'); stickMove(e);
   });
   stickEl.addEventListener('pointermove', stickMove);
