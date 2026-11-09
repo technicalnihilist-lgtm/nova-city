@@ -1078,16 +1078,23 @@
   });
   document.getElementById('again').addEventListener('click', () => location.reload());
 
+  const sizeTmp = new THREE.Vector2();
   addEventListener('resize', () => {
     // the pixel ratio is fixed at load; after a zoom or a move to a display
     // with another DPR the canvas was rendered at the old scale, which showed
-    // up as a soft or over-sampled picture. Only touch it when it changed, so
-    // a plain window resize still costs nothing.
+    // up as a soft or over-sampled picture. Only touch it when it changed.
     const pr = Math.min(window.devicePixelRatio || 1, 1.5);
-    if (Math.abs(renderer.getPixelRatio() - pr) > 0.01) renderer.setPixelRatio(pr);
-    camera.aspect = window.innerWidth / window.innerHeight;
+    const prChanged = Math.abs(renderer.getPixelRatio() - pr) > 0.01;
+    if (prChanged) renderer.setPixelRatio(pr);   // this resizes the buffer too
+    const w = window.innerWidth, h = window.innerHeight;
+    const s = renderer.getSize(sizeTmp);
+    // mobile browsers fire resize on every URL-bar slide; reallocating the
+    // drawing buffer and the projection matrix for an unchanged size was pure
+    // work (and garbage) on every one of them
+    if (!prChanged && s.x === w && s.y === h) return;
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(w, h);
   });
 
   refreshPanels();
