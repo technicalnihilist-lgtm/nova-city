@@ -351,6 +351,9 @@
     c.mesh.visible = true;
     state.vel.set(0, 0, 0);
     state.car = null;
+    // the hood and cockpit views only exist inside a car; leaving one of them
+    // selected meant the next car was entered straight into the cockpit
+    state.camMode = 0;
     refreshPanels();
   }
 
