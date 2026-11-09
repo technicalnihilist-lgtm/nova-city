@@ -31,6 +31,10 @@
   addEventListener('keydown', (e) => {
     keys[e.code] = true;
     if (e.code === 'Space') e.preventDefault();
+    // a held key repeats keydown events; the one-shot actions below must fire
+    // once per press, or holding F/C/R/E/H flipped flight, the camera, the
+    // weather and the horn many times a second
+    if (e.repeat) return;
     if (e.code === 'KeyF') input.fly = true;
     if (e.code === 'KeyE') input.act = true;
     if (e.code === 'KeyC') input.cam = true;
