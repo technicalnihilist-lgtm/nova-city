@@ -1051,7 +1051,14 @@
     document.getElementById('start').classList.add('hide');
     state.started = true;
     initAudio();
-    if (actx && actx.state === 'suspended') actx.resume();
+    // resume() rejects when the browser still wants a real gesture; the
+    // unhandled rejection landed in the console on every entry
+    if (actx && actx.state === 'suspended') {
+      try {
+        const p = actx.resume();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch (e) { /* audio stays off until the next gesture */ }
+    }
     refreshPanels();
     showToast('Drag to look · C for camera · R for weather');
     const el = document.documentElement;
