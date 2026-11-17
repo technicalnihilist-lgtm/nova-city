@@ -1733,9 +1733,11 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       hero.rotation.x = lerp(hero.rotation.x, 0, 8 * dt);
       if (dir.lengthSq() > 0.02) {
         hero.rotation.y = angLerp(hero.rotation.y, Math.atan2(dir.x, dir.z), 12 * dt);
-        state.bob += dt * (running ? 14 : 9);
+        // wrapped: the stride phase was summed for the whole session and slowly
+        // lost float precision on a long walk
+        state.bob = (state.bob + dt * (running ? 14 : 9)) % TAU;
       } else {
-        state.bob += dt * 2;
+        state.bob = (state.bob + dt * 2) % TAU;
       }
       bobY = grounded ? Math.abs(Math.sin(state.bob)) * (running ? 0.075 : 0.03) : 0;
     }
@@ -1802,6 +1804,10 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     c.steer = lerp(c.steer, input.steer * steerMax, 1 - Math.exp(-9 * dt));
     const yawRate = -(c.speed / 2.62) * Math.tan(c.steer);   // +steer = turn right
     c.heading += yawRate * dt;
+    // keep the heading inside one turn: it was accumulated for the whole drive
+    // and lost precision (and body-roll sign) after long sessions
+    if (c.heading > Math.PI) c.heading -= TAU;
+    else if (c.heading < -Math.PI) c.heading += TAU;
 
     const gripLoss = (hb > 0.02 ? 2.4 : 1) * clamp(absV / 26, 0, 1.2);
     c.slip = lerp(c.slip, clamp(yawRate * absV * 0.05, -1.4, 1.4) * gripLoss, 1 - Math.exp(-5 * dt));
