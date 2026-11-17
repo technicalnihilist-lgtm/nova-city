@@ -716,7 +716,17 @@
 
     const sx = Math.cos(ang) * 0.8, sy = elev, sz = 0.62;
     const len = Math.hypot(sx, sy, sz) || 1;
-    sun.position.set(sx / len * 190, Math.max(sy / len, -0.4) * 190, sz / len * 190);
+    // the light sat on a 190 m sphere around the world origin while its target
+    // followed the player, so the sun's azimuth — and with it every shadow —
+    // swung round as you drove away from the middle of the map. Offset the
+    // light from the target instead: the direction stays fixed, the shadow
+    // frustum still follows the player.
+    const stx = sun.target.position.x, stz = sun.target.position.z;
+    sun.position.set(
+      stx + sx / len * 190,
+      Math.max(sy / len, -0.4) * 190,
+      stz + sz / len * 190
+    );
     sun.intensity = 3.0 * clamp(elev * 2.6, 0, 1);
     sun.color.setHex(elev > 0.35 ? 0xffeedd : 0xffb070);
     hemi.intensity = 0.58 + clamp(elev, 0, 1) * 0.46;
