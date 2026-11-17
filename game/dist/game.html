@@ -1626,6 +1626,14 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     state.mode = 'foot';
     c.occupied = false;
     c.speed = 0;
+    // the body roll and the steered front wheels were left baked into the car:
+    // updateCar is the only thing that resets them and it stops running the
+    // moment you step out, so a parked car sat leaning with its wheels cocked
+    c.steer = 0;
+    c.slip = 0;
+    c.mesh.rotation.z = 0;
+    const pw = c.mesh.userData.wheels;
+    if (pw) for (let w = 0; w < pw.length; w++) pw[w].rotation.y = 0;
     const side = 3.4;
     let px = c.x + Math.cos(c.heading) * side;
     let pz = c.z - Math.sin(c.heading) * side;
