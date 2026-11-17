@@ -690,6 +690,12 @@
   // instead of one per car and does not duplicate the merged vertex buffers
   // 37 times. The non-paint materials were already shared.
   const CAR_CACHE = new Map();
+  // Everything but the paint is identical from car to car, so the merged
+  // geometry for the shared materials is built once for the whole fleet. It
+  // used to be rebuilt inside every paint colour's cache entry, which kept a
+  // dozen copies of the same buffers in GPU memory and re-ran the vertex
+  // transform for each colour while the level loaded.
+  let carSharedMerged = null;
 
   function buildCar(colorHex) {
     const g = new THREE.Group();
@@ -702,11 +708,13 @@
     const head = CAR_MAT.head;
     const tail = CAR_MAT.tail;
 
-    const parts = [];
+    const paintParts = [];
+    const sharedParts = [];
     const put = (geo, mat, x, y, z, rx) => {
       const m = new THREE.Matrix4().makeRotationX(rx || 0);
       m.setPosition(x, y, z);
-      parts.push({ geo: geo, mat: mat, matrix: m });
+      const item = { geo: geo, mat: mat, matrix: m };
+      if (mat === paint) paintParts.push(item); else sharedParts.push(item);
     };
 
     put(CAR_GEO.body, paint, 0, 0.72, 0);
@@ -734,14 +742,21 @@
     });
     put(CAR_GEO.strip, CAR_MAT.strip, 0, 0.98, -2.24);
 
-    // one mesh per material instead of one mesh per part
+    // one mesh per material instead of one mesh per part; the non-paint meshes
+    // share their geometry with every other car
+    if (!carSharedMerged) carSharedMerged = mergeByMaterial(sharedParts);
     let merged = cached && cached.merged;
     if (!merged) {
-      merged = mergeByMaterial(parts);
+      merged = mergeByMaterial(paintParts);
       CAR_CACHE.set(colorHex, { paint: paint, merged: merged });
     }
     for (let i = 0; i < merged.length; i++) {
       const m = new THREE.Mesh(merged[i].geo, merged[i].mat);
+      m.castShadow = true; m.receiveShadow = true;
+      g.add(m);
+    }
+    for (let i = 0; i < carSharedMerged.length; i++) {
+      const m = new THREE.Mesh(carSharedMerged[i].geo, carSharedMerged[i].mat);
       m.castShadow = true; m.receiveShadow = true;
       g.add(m);
     }
