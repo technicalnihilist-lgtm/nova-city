@@ -312,17 +312,26 @@
   const FINAL_DRIVE = 3.9;
   const WHEEL_R = 0.355;
 
+  // the HUD prompt and the "enter car" action both asked for this every frame,
+  // so the whole fleet was scanned twice a frame; the answer cannot change
+  // inside a frame, so cache it per frame
+  let nearCarCache = null, nearCarFrame = -1, frameNo = 0;
   function nearestCar() {
+    if (nearCarFrame === frameNo) return nearCarCache;
+    nearCarFrame = frameNo;
     // the check is 2-D, so mid-flight over a parked car the hero could climb
     // into it from 100 m up; require him to be on the ground
-    if (heroY > 2.2) return null;
+    if (heroY > 2.2) { nearCarCache = null; return null; }
     let best = null, bd = 1e9;
     for (const c of cars) {
       if (c.occupied) continue;
-      const d = Math.hypot(c.x - heroPos.x, c.z - heroPos.z);
+      // squared distance is all the comparison needs
+      const dx = c.x - heroPos.x, dz = c.z - heroPos.z;
+      const d = dx * dx + dz * dz;
       if (d < bd) { bd = d; best = c; }
     }
-    return bd < 5.4 ? best : null;
+    nearCarCache = bd < 29.16 ? best : null;   // 5.4 m reach
+    return nearCarCache;
   }
 
   function enterCar(c) {
@@ -330,6 +339,7 @@
     state.mode = 'drive';
     state.car = c;
     c.occupied = true;
+    nearCarFrame = -1;
     c.gear = 0; c.rpm = 900; c.steer = 0; c.slip = 0; c.shiftT = 0;
     if (c.fuel === undefined) c.fuel = 42 + Math.random() * 30;
     hero.visible = false;
@@ -342,6 +352,7 @@
     if (!c) return;
     state.mode = 'foot';
     c.occupied = false;
+    nearCarFrame = -1;
     c.speed = 0;
     // the body roll and the steered front wheels were left baked into the car:
     // updateCar is the only thing that resets them and it stops running the
@@ -999,6 +1010,7 @@
 
   function loop(now) {
     requestAnimationFrame(loop);
+    frameNo++;
     let dt = (now - last) / 1000;
     last = now;
     // a backwards or NaN timestamp (tab restore, suspended clock) must not push
