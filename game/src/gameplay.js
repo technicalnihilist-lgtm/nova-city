@@ -653,6 +653,9 @@
     }
 
     const player = state.mode === 'drive' ? state.car : null;
+    // a pedestrian was invisible to the AI, so traffic drove straight through
+    // the hero standing in the road; only a hero on the ground counts
+    const onFoot = !player && state.mode === 'foot' && heroY < 2.2;
     // the separation test ran Math.sin/Math.cos on both cars of every pair, which
     // came to well over a thousand trig calls a frame. A forward vector only
     // changes with the heading, so build them once per frame.
@@ -676,6 +679,9 @@
       if (player) {
         const pdx = player.x - t.x, pdz = player.z - t.z;
         if (pdx * pdx + pdz * pdz < 64) target = 0;
+      } else if (onFoot) {
+        const hdx = heroPos.x - t.x, hdz = heroPos.z - t.z;
+        if (hdx * hdx + hdz * hdz < 36) target = 0;
       }
       // separation: yield only to a car that is ahead of us and travelling the
       // same way. Slowing for every car within 6.5 m (including the ones behind
