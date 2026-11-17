@@ -260,8 +260,15 @@
     if (actx) return;
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
+    try { actx = new AC(); } catch (e) { actx = null; }
+  }
+  // The engine note is two oscillators and a filter that keep the audio thread
+  // busy at full rate. They used to be started with the game and left running
+  // (silently, at gain 0) for the whole time the hero was on foot. Build them
+  // when a car is entered and tear them down when it is left.
+  function startEngine() {
+    if (!actx || engGain) return;
     try {
-      actx = new AC();
       engOsc = actx.createOscillator(); engOsc.type = 'sawtooth'; engOsc.frequency.value = 60;
       engOsc2 = actx.createOscillator(); engOsc2.type = 'square'; engOsc2.frequency.value = 90;
       engFilt = actx.createBiquadFilter(); engFilt.type = 'lowpass'; engFilt.frequency.value = 620;
@@ -269,7 +276,18 @@
       engOsc.connect(engFilt); engOsc2.connect(engFilt);
       engFilt.connect(engGain); engGain.connect(actx.destination);
       engOsc.start(); engOsc2.start();
-    } catch (e) { actx = null; }
+    } catch (e) { engOsc = engOsc2 = engFilt = engGain = null; }
+  }
+  function stopEngine() {
+    if (!actx || !engGain) return;
+    try {
+      const t = actx.currentTime;
+      const o1 = engOsc, o2 = engOsc2, g = engGain;
+      g.gain.setTargetAtTime(0, t, 0.02);
+      o1.stop(t + 0.15); o2.stop(t + 0.15);
+      o1.onended = function () { o1.disconnect(); o2.disconnect(); g.disconnect(); };
+    } catch (e) { /* nothing left to tear down */ }
+    engOsc = engOsc2 = engFilt = engGain = null;
   }
   let audioT = 0;
   function updateAudio(dt) {
@@ -342,6 +360,7 @@
     nearCarFrame = -1;
     c.gear = 0; c.rpm = 900; c.steer = 0; c.slip = 0; c.shiftT = 0;
     if (c.fuel === undefined) c.fuel = 42 + Math.random() * 30;
+    startEngine();
     hero.visible = false;
     state.yaw = c.heading + Math.PI;
     refreshPanels();
@@ -376,6 +395,7 @@
     c.mesh.visible = true;
     state.vel.set(0, 0, 0);
     state.car = null;
+    stopEngine();
     // the hood and cockpit views only exist inside a car; leaving one of them
     // selected meant the next car was entered straight into the cockpit
     state.camMode = 0;
