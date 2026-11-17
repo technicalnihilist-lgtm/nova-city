@@ -1919,6 +1919,13 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     }
 
     const player = state.mode === 'drive' ? state.car : null;
+    // the separation test ran Math.sin/Math.cos on both cars of every pair, which
+    // came to well over a thousand trig calls a frame. A forward vector only
+    // changes with the heading, so build them once per frame.
+    for (let n2 = 0; n2 < traffic.length; n2++) {
+      const o = traffic[n2];
+      o.fhx = Math.sin(o.heading); o.fhz = Math.cos(o.heading);
+    }
     for (const t of traffic) {
       const p = nodePos(t.node.i, t.node.k);
       const rx = t.dir[1], rz = -t.dir[0];           // right-hand lane offset
@@ -1927,6 +1934,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       const dist = Math.sqrt(dx * dx + dz * dz);
 
       t.heading = angLerp(t.heading, Math.atan2(dx, dz), 1 - Math.exp(-3.5 * dt));
+      t.fhx = Math.sin(t.heading); t.fhz = Math.cos(t.heading);
 
       let target = t.cruise;
       if (dist < 16) target = 4.2;
@@ -1938,21 +1946,21 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       // separation: yield only to a car that is ahead of us and travelling the
       // same way. Slowing for every car within 6.5 m (including the ones behind
       // and the cross traffic) made queues crawl and lock up at intersections.
-      const fhx = Math.sin(t.heading), fhz = Math.cos(t.heading);
+      const fhx = t.fhx, fhz = t.fhz;
       for (let n2 = 0; n2 < traffic.length; n2++) {
         const o = traffic[n2];
         if (o === t) continue;
         const ox = o.x - t.x, oz = o.z - t.z;
         if (ox * ox + oz * oz > 42.25) continue;
         if (ox * fhx + oz * fhz < 0.5) continue;              // behind us
-        if (fhx * Math.sin(o.heading) + fhz * Math.cos(o.heading) < 0.2) continue; // crossing or oncoming
+        if (fhx * o.fhx + fhz * o.fhz < 0.2) continue;              // crossing or oncoming
         target = Math.min(target, 1.5);
         break;
       }
       t.speed = lerp(t.speed, target, 1 - Math.exp(-2.6 * dt));
 
-      t.x += Math.sin(t.heading) * t.speed * dt;
-      t.z += Math.cos(t.heading) * t.speed * dt;
+      t.x += t.fhx * t.speed * dt;
+      t.z += t.fhz * t.speed * dt;
       t.mesh.position.set(t.x, 0, t.z);
       t.mesh.rotation.y = t.heading;
       const spin = t.speed * dt / WHEEL_R;
