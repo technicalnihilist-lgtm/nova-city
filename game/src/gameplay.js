@@ -568,11 +568,21 @@
 
   const TRAFFIC_COLORS = [0x9aa0a6, 0x4a5560, 0x7a6a58, 0x2f4a63, 0x8b8f96, 0x6d3b3b, 0xdadde0];
   function spawnTraffic(count) {
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const taken = new Set();
     for (let n = 0; n < count; n++) {
-      const nd = NODES[ri(0, NODES.length - 1)];
+      // two AI cars that drew the same node and the same direction started the
+      // game stacked inside each other; draw again until the lane is free
+      let nd = null, d = null;
+      for (let tries = 0; tries < 12; tries++) {
+        const cand = NODES[ri(0, NODES.length - 1)];
+        const cd = dirs[ri(0, 3)];
+        const key = cand.i + '|' + cand.k + '|' + cd[0] + '|' + cd[1];
+        if (taken.has(key)) continue;
+        taken.add(key); nd = cand; d = cd; break;
+      }
+      if (!nd) { nd = NODES[ri(0, NODES.length - 1)]; d = dirs[ri(0, 3)]; }
       const p = nodePos(nd.i, nd.k);
-      const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-      const d = dirs[ri(0, 3)];
       const g = buildCar(TRAFFIC_COLORS[ri(0, TRAFFIC_COLORS.length - 1)]);
       g.traverse((o) => { if (o.isMesh) o.castShadow = false; });
       scene.add(g);
