@@ -1018,9 +1018,12 @@
     if (!(dt > 0)) dt = 0;
     else if (dt > 0.05) dt = 0.05;
 
-    if (!state.started || document.body.classList.contains('portrait')) {
+    const portrait = document.body.classList.contains('portrait');
+    if (!state.started || portrait) {
       updateCamera(dt);
-      renderer.render(scene, camera);
+      // while the rotate-device overlay covers the screen the frame cannot be
+      // seen, so drawing it only burned battery and warmed the phone up
+      if (!portrait) renderer.render(scene, camera);
       return;
     }
 
